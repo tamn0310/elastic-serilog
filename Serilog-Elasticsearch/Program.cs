@@ -1,15 +1,22 @@
+using Elastic.Apm.SerilogEnricher;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Serilog;
+using Serilog.Events;
+using Serilog.Formatting.Elasticsearch;
 using Serilog.Sinks.Elasticsearch;
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 
 namespace Serilog_Elasticsearch
 {
     public class Program
     {
+        public const string AppName = "Serilog-ElasticSearch";
         public static void Main(string[] args)
         {
             ConfigureLogging();
@@ -35,7 +42,7 @@ namespace Serilog_Elasticsearch
             {
                 CreateHostBuilder(args).Build().Run();
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
                 Log.Fatal($"Failed to start {Assembly.GetExecutingAssembly().GetName().Name}", ex);
                 throw;
@@ -47,18 +54,18 @@ namespace Serilog_Elasticsearch
             var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
             var configuration = new ConfigurationBuilder()
                 .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-                .AddJsonFile(
-                    $"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")}.json",
-                    optional: true)
+                .AddJsonFile($"appsettings.{environment}.json", optional: true)
                 .Build();
 
             Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.Information()
                 .Enrich.FromLogContext()
+                .Enrich.WithThreadName()
                 .Enrich.WithMachineName()
+                .Enrich.WithElasticApmCorrelationInfo()
                 .WriteTo.Debug()
-                .WriteTo.Console()
                 .WriteTo.Elasticsearch(ConfigureElasticSink(configuration, environment))
-                .Enrich.WithProperty("Environment", environment)
+                .Enrich.WithProperty("ApplicationContext", AppName)
                 .ReadFrom.Configuration(configuration)
                 .CreateLogger();
         }
@@ -67,8 +74,25 @@ namespace Serilog_Elasticsearch
         {
             return new ElasticsearchSinkOptions(new Uri(configuration["ElasticConfiguration:Uri"]))
             {
+                BufferCleanPayload = (failingEvent, statuscode, exception) =>
+                {
+                    dynamic e = JObject.Parse(failingEvent);
+                    return JsonConvert.SerializeObject(new Dictionary<string, object>()
+                {
+                    { "@timestamp",e["@timestamp"]},
+                    { "level","Error"},
+                    { "message","Error: "+e.message},
+                    { "messageTemplate",e.messageTemplate},
+                    { "failingStatusCode", statuscode},
+                    { "failingException", exception}
+                });
+                },
+                MinimumLogEventLevel = LogEventLevel.Information,
                 AutoRegisterTemplate = true,
-                IndexFormat = $"{Assembly.GetExecutingAssembly().GetName().Name.ToLower().Replace(".", "-")}-{environment?.ToLower().Replace(".", "-")}-{DateTime.UtcNow:yyyy-MM}"
+                AutoRegisterTemplateVersion = AutoRegisterTemplateVersion.ESv7,
+                CustomFormatter = new ExceptionAsObjectJsonFormatter(renderMessage: true),
+                ModifyConnectionSettings = x => x.BasicAuthentication("elastic", "changeme"),
+                EmitEventFailure = EmitEventFailureHandling.WriteToSelfLog | EmitEventFailureHandling.WriteToFailureSink | EmitEventFailureHandling.RaiseCallback
             };
         }
     }

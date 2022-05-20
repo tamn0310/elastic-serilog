@@ -1,37 +1,65 @@
 version: '3.4'
 
 services:
-
   elasticsearch:
-   container_name: elasticsearch
-   image: docker.elastic.co/elasticsearch/elasticsearch:7.9.2
-   ports:
-    - 9200:9200
-   volumes:
-    - elasticsearch-data:/usr/share/elasticsearch/data
-   environment:
-    - xpack.monitoring.enabled=true
-    - xpack.watcher.enabled=false
-    - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-    - discovery.type=single-node
-   networks:
-    - elastic
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.5.0
+    configs:
+      - source: elastic_config
+        target: /usr/share/elasticsearch/config/elasticsearch.yml
+    container_name: elk-elasticsearch-${CI_COMMIT_REF_SLUG-develop}
+    environment:
+      ES_JAVA_OPTS: "-Xmx256m -Xms256m"
+      ELASTIC_PASSWORD: changeme
+      discovery.type: single-node
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    deploy:
+      mode: replicated
+      replicas: 1
+    restart: on-failure
 
   kibana:
-   container_name: kibana
-   image: docker.elastic.co/kibana/kibana:7.9.2
-   ports:
-    - 5601:5601
-   depends_on:
-    - elasticsearch
-   environment:
-    - ELASTICSEARCH_URL=http://localhost:9200
-   networks:
-    - elastic
-  
-networks:
-  elastic:
-    driver: bridge
+    image: docker.elastic.co/kibana/kibana:7.5.0
+    configs:
+      - source: kibana_config
+        target: /usr/share/kibana/config/kibana.yml
+    container_name: elk-kibana-${CI_COMMIT_REF_SLUG-develop}
+    ports:
+      - "5601:5601"
+    deploy:
+      mode: replicated
+      replicas: 1
+    depends_on:
+      - elasticsearch
+    restart: on-failure
+
+  apm-server:
+    image: docker.elastic.co/apm/apm-server:7.5.0
+    configs:
+      - source: apmserver_config
+        target: /usr/share/apm-server/apm-server.yml
+    container_name: apm-server-${CI_COMMIT_REF_SLUG-develop}
+    ports:
+      - "8200:8200"
+    user: apm-server
+    depends_on: ["elasticsearch", "kibana"]
+    command: /usr/share/apm-server/apm-server -e -c /usr/share/apm-server/apm-server.yml -E apm-server.host=apm-server:8200 --strict.perms=false
+    #networks: 
+    #  - lab-network
+    healthcheck:
+      test: ["CMD", "curl", "-s", "-f", "http://localhost:8200/polls"]
+      retries: 6
+
+configs:
+  elastic_config:
+    file: ./elk/elasticsearch/config/elasticsearch.yml
+  kibana_config:
+    file: ./elk/kibana/config/kibana.yml
+  apmserver_config:
+    file: ./elk/apm-server/apm-server.yml
 
 volumes:
-  elasticsearch-data:
+  esdata:

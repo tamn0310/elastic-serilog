@@ -1,0 +1,8 @@
+apm-server:
+  hosts: apm-server:8200
+output.elasticsearch:
+  hosts: ['elasticsearch:9200']
+  username: elastic
+  password: changeme
+setup.kibana:
+  host: 'kibana:5601'

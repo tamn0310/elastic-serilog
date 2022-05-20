@@ -1,4 +1,7 @@
 using Elastic.Apm.AspNetCore;
+using Elastic.Apm.DiagnosticSource;
+using Elastic.Apm.EntityFrameworkCore;
+using Elastic.Apm.NetCoreAll;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
@@ -22,16 +25,18 @@ namespace Serilog_Elasticsearch
 
         public IConfiguration Configuration { get; }
 
-        // This method gets called by the runtime. Use this method to add services to the container.
-        public void ConfigureServices(IServiceCollection services)
+        public void  ConfigureServices(IServiceCollection services)
         {
             services.AddControllers();
         }
 
-        // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
-            //app.UseElasticApm(this.Configuration);
+            app.UseElasticApm(this.Configuration);
+            //app.UseElasticApm(Configuration,
+            //     new HttpDiagnosticsSubscriber(),    /* Enable tracing of outgoing HTTP requests */
+            //     new EfCoreDiagnosticsSubscriber()); /* Enable tracing of database calls through EF Core*/
+
             if (env.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();

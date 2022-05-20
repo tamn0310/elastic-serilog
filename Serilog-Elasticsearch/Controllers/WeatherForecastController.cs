@@ -27,7 +27,6 @@ namespace Serilog_Elasticsearch.Controllers
         {
             try
             {
-                _logger.LogInformation($"Start log");
                 var rng = new Random();
                 return Enumerable.Range(1, 5).Select(index => new WeatherForecast
                 {
@@ -37,8 +36,9 @@ namespace Serilog_Elasticsearch.Controllers
                 })
                 .ToArray();
             }
-            catch (Exception)
+            catch (Exception e)
             {
+                _logger.LogError(e, e.Message);
                 throw;
             }
         }
